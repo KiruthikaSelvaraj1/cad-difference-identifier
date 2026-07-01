@@ -34,7 +34,7 @@ from typing import List, Dict, Tuple
 
 # Minimum contour area in pixels to be considered a real change.
 # Anything smaller is treated as noise (scanner artifacts, anti-aliasing residue).
-MIN_CONTOUR_AREA = 100
+MIN_CONTOUR_AREA = 50
 
 # Dilation kernel size. 5x5 is large enough to bridge thin-line fragments
 # without merging genuinely separate change regions.
@@ -122,26 +122,30 @@ def create_combined_mask(
     Returns:
         Binary mask (uint8, 0 or 255) with dilated change regions.
     """
+    # Smooth the difference maps slightly before thresholding to reduce
+    # isolated noise while preserving real structural differences.
+    blurred_ssim = cv2.GaussianBlur(ssim_diff, (5, 5), 0)
+    blurred_abs = cv2.GaussianBlur(abs_diff, (5, 5), 0)
+
     # Threshold SSIM diff — Otsu's adapts to the actual noise level
     _, ssim_mask = cv2.threshold(
-        ssim_diff, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU
+        blurred_ssim, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU
     )
 
     # Threshold absolute diff similarly
     _, abs_mask = cv2.threshold(
-        abs_diff, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU
+        blurred_abs, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU
     )
 
     # Combine both masks — a pixel is "changed" if either method flags it
     combined = cv2.bitwise_or(ssim_mask, abs_mask)
 
-    # Morphological dilation: bridge nearby thin-line fragments
-    # This is critical for CAD drawings where a shifted line creates two
-    # parallel 1-pixel streaks that should be treated as one change region
+    # Close small holes and gaps first, then dilate to unify line fragments.
     kernel = cv2.getStructuringElement(
         cv2.MORPH_RECT, (DILATION_KERNEL_SIZE, DILATION_KERNEL_SIZE)
     )
-    dilated = cv2.dilate(combined, kernel, iterations=2)
+    closed = cv2.morphologyEx(combined, cv2.MORPH_CLOSE, kernel, iterations=1)
+    dilated = cv2.dilate(closed, kernel, iterations=2)
 
     return dilated
 

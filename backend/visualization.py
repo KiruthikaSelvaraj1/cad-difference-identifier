@@ -55,12 +55,38 @@ def draw_bounding_boxes(
         # Green bounding box with 2px line weight
         cv2.rectangle(result, (x, y), (x + w, y + h), (0, 255, 0), 2)
 
-        # Label with region index — placed above the box
+        # Label background and arrow for clearer region marking
         label = f"#{idx}"
-        label_y = max(y - 10, 20)  # Ensure label doesn't go off-screen
+        label_x = x
+        label_y = max(y - 18, 20)
+        text_size, _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
+        cv2.rectangle(
+            result,
+            (label_x - 4, label_y - text_size[1] - 8),
+            (label_x + text_size[0] + 8, label_y + 4),
+            (0, 0, 0),
+            cv2.FILLED,
+        )
         cv2.putText(
-            result, label, (x, label_y),
-            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2
+            result,
+            label,
+            (label_x, label_y),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.6,
+            (0, 255, 0),
+            2,
+        )
+
+        # Draw an arrow from the label down to the top-left corner of the box
+        arrow_tip = (x + 10, y + 10)
+        arrow_start = (label_x + text_size[0] // 2, label_y - 4)
+        cv2.arrowedLine(
+            result,
+            arrow_start,
+            arrow_tip,
+            (0, 255, 0),
+            2,
+            tipLength=0.2,
         )
 
     cv2.imwrite(output_path, result)

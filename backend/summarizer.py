@@ -63,114 +63,126 @@ def generate_summary(statistics: Dict) -> str:
 
     sentences = []
 
-    # === OPENING SENTENCE: state the count and overall characterization ===
+    # === Opening sentence: count and high-level result ===
     opening_templates = [
-        f"The comparison identified {_num_word(region_count)} changed "
-        f"region{'s' if region_count != 1 else ''} between the two drawings.",
-
-        f"Analysis of the two CAD drawings revealed "
-        f"{_num_word(region_count)} distinct area{'s' if region_count != 1 else ''} "
-        f"of modification.",
-
-        f"A total of {_num_word(region_count)} "
-        f"region{'s' if region_count != 1 else ''} "
-        f"{'were' if region_count != 1 else 'was'} "
-        f"found to differ between the reference and comparison drawings.",
+        f"The comparison identified {_num_word(region_count)} changed region{'s' if region_count != 1 else ''} between the two drawings.",
+        f"Analysis found {_num_word(region_count)} distinct change region{'s' if region_count != 1 else ''} across the two images.",
+        f"The two images differ in {_num_word(region_count)} detected region{'s' if region_count != 1 else ''}.",
     ]
     sentences.append(random.choice(opening_templates))
 
-    # === MIDDLE SENTENCES: describe the top 1-3 largest regions ===
+    # === Describe the largest regions by location ===
     top_regions = regions[:3]  # Already sorted largest-first
+    primary_change = top_regions[0]
+    primary_location = _readable_location(primary_change["location"])
+    primary_area = primary_change["area"]
 
-    # Engineering vocabulary for describing changes — more specific than
-    # generic words like "object" or "thing"
-    change_descriptors = [
-        "a component modification",
-        "an alteration to a drawing element",
-        "a change in line geometry",
-    ]
+    primary_bbox = _bbox_text(primary_change["bbox"])
+    sentences.append(
+        f"The largest difference is located in the {primary_location}, bounded by {primary_bbox}, "
+        f"and covers about {primary_area:,} pixels."
+    )
 
-    size_descriptors_large = [
-        "The most significant modification",
-        "The largest detected change",
-        "The primary area of difference",
-    ]
+    if len(top_regions) > 1:
+        secondary_change = top_regions[1]
+        secondary_location = _readable_location(secondary_change["location"])
+        secondary_bbox = _bbox_text(secondary_change["bbox"])
+        sentences.append(
+            f"A second significant change appears in the {secondary_location}, bounded by {secondary_bbox}, "
+            f"indicating another clearly localized modification."
+        )
 
-    size_descriptors_secondary = [
-        "followed by",
-        "additionally,",
-        "a secondary change was detected as",
-    ]
+    if len(top_regions) > 2:
+        third_change = top_regions[2]
+        third_location = _readable_location(third_change["location"])
+        third_bbox = _bbox_text(third_change["bbox"])
+        sentences.append(
+            f"A further smaller change was detected in the {third_location}, bounded by {third_bbox}, "
+            f"showing that the difference detection is correctly marking multiple areas."
+        )
 
-    annotation_descriptors = [
-        "Minor annotation adjustments were also detected",
-        "Smaller dimensional or label changes were observed",
-        "Additional minor modifications appear",
-    ]
+    # === Mention the overall distribution of changes ===
+    location_summary = _summarize_locations(regions)
+    if location_summary:
+        sentences.append(
+            f"Detected changes are concentrated in the {location_summary}, "
+            f"with clearly labeled bounding boxes marking each area of difference."
+        )
 
-    for idx, region in enumerate(top_regions):
-        location = region["location"]
-        area = region["area"]
-
-        if idx == 0:
-            # Describe the largest region
-            desc_start = random.choice(size_descriptors_large)
-            desc_type = random.choice([
-                f"is {random.choice(change_descriptors)} in the {location} area",
-                f"involves a structural revision in the {location} portion of the drawing",
-                f"corresponds to {random.choice(change_descriptors)} located in the {location} section",
-            ])
-            sentences.append(f"{desc_start} {desc_type}.")
-
-        elif idx == 1:
-            # Describe the second-largest region
-            secondary_templates = [
-                f"This is {random.choice(size_descriptors_secondary)} "
-                f"the removal or addition of a line segment in the {location} area.",
-
-                f"A secondary modification was identified in the {location} region, "
-                f"suggesting a revision to a dimension or component boundary.",
-
-                f"Another notable change appears in the {location} area, "
-                f"indicating an adjustment to the drawing layout.",
-            ]
-            sentences.append(random.choice(secondary_templates))
-
-        elif idx == 2:
-            # Describe the third region more briefly
-            sentences.append(
-                f"{random.choice(annotation_descriptors)} near the {location}."
-            )
-
-    # === CLOSING SENTENCE: state the percentage ===
-    if percent_changed < 1.0:
-        # Minor changes — use language reflecting negligible modifications
-        closing_templates = [
-            f"Overall, the changes are minor, affecting approximately "
-            f"{percent_changed}% of the total drawing area.",
-
-            f"These represent negligible modifications, with only "
-            f"{percent_changed}% of the drawing area affected.",
-
-            f"In total, less than {max(percent_changed, 0.1)}% of the "
-            f"drawing was modified, indicating minor revisions.",
-        ]
-    else:
-        # Substantive changes
-        closing_templates = [
-            f"Overall, approximately {percent_changed}% of the drawing "
-            f"area was affected by these changes.",
-
-            f"In total, the modifications span roughly {percent_changed}% "
-            f"of the drawing's visible area.",
-
-            f"The cumulative extent of changes covers about {percent_changed}% "
-            f"of the total drawing area.",
-        ]
-
-    sentences.append(random.choice(closing_templates))
+    # === Closing sentence: severity and extent ===
+    severity = _severity_label(percent_changed)
+    sentences.append(
+        f"Overall, these {severity} modifications affect approximately {percent_changed}% of the total drawing area."
+    )
 
     return " ".join(sentences)
+
+
+def _readable_location(location: str) -> str:
+    """
+    Convert location keys like "center-right" into a more natural phrase.
+    """
+    return location.replace('-', ' ')
+
+
+def _unified_location(location: str) -> str:
+    """
+    Convert location strings into consistent, readable phrases.
+    """
+    mapping = {
+        'top-left': 'upper left',
+        'top-center': 'top center',
+        'top-right': 'upper right',
+        'center-left': 'middle left',
+        'center': 'center',
+        'center-right': 'middle right',
+        'bottom-left': 'lower left',
+        'bottom-center': 'bottom center',
+        'bottom-right': 'lower right',
+    }
+    return mapping.get(location, _readable_location(location))
+
+
+def _summarize_locations(regions: List[Dict]) -> str:
+    """
+    Build a short human-readable summary of the most common locations.
+    """
+    location_counts = {}
+    for region in regions:
+        loc = _readable_location(region["location"])
+        location_counts[loc] = location_counts.get(loc, 0) + 1
+
+    # Sort locations by frequency, then return the top 2 locations
+    sorted_locations = sorted(
+        location_counts.items(), key=lambda item: item[1], reverse=True
+    )
+    if not sorted_locations:
+        return ""
+
+    top_locations = [loc for loc, _ in sorted_locations[:2]]
+    if len(top_locations) == 1:
+        return top_locations[0]
+
+    return f"{top_locations[0]} and {top_locations[1]}"
+
+
+def _bbox_text(bbox: List[int]) -> str:
+    """
+    Convert a bounding box list to a human-readable coordinate string.
+    """
+    x, y, w, h = bbox
+    return f"(x={x}, y={y}, w={w}, h={h})"
+
+
+def _severity_label(percent_changed: float) -> str:
+    """
+    Choose a severity descriptor based on the percentage of area changed.
+    """
+    if percent_changed < 2.0:
+        return "minor"
+    if percent_changed < 10.0:
+        return "moderate"
+    return "significant"
 
 
 def _num_word(n: int) -> str:

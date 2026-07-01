@@ -401,7 +401,9 @@ HTML_PAGE = """
 
         body {
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-            background: var(--bg-primary);
+            background:
+                radial-gradient(circle at top left, rgba(108, 99, 255, 0.2), transparent 30%),
+                linear-gradient(135deg, var(--bg-primary) 0%, #11151f 100%);
             color: var(--text-primary);
             min-height: 100vh;
             line-height: 1.6;
@@ -495,8 +497,8 @@ HTML_PAGE = """
 
         /* Summary Box */
         .summary-box {
-            background: linear-gradient(135deg, #1a2332 0%, #1e2a3a 100%);
-            border: 1px solid #2563eb40;
+            background: linear-gradient(135deg, rgba(30, 41, 59, 0.95) 0%, rgba(15, 23, 42, 0.95) 100%);
+            border: 1px solid rgba(59, 130, 246, 0.35);
             border-left: 4px solid #3b82f6;
             border-radius: var(--radius);
             padding: 24px 28px;
@@ -504,6 +506,44 @@ HTML_PAGE = """
             font-size: 1.05rem;
             line-height: 1.8;
             color: var(--text-primary);
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
+        }
+
+        /* Bounding Box Grid */
+        .bbox-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 16px;
+            margin-bottom: 32px;
+        }
+        .bbox-card {
+            background: linear-gradient(135deg, rgba(37, 40, 64, 0.95) 0%, rgba(24, 28, 47, 0.95) 100%);
+            border: 1px solid rgba(108, 99, 255, 0.28);
+            border-radius: var(--radius);
+            padding: 16px 18px;
+            box-shadow: var(--shadow);
+        }
+        .bbox-card .bbox-title {
+            color: #8b9bff;
+            font-size: 0.82rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            margin-bottom: 8px;
+        }
+        .bbox-card .bbox-coords {
+            color: var(--text-primary);
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+        .bbox-card .bbox-meta {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            flex-wrap: wrap;
         }
 
         /* Stats Grid */
@@ -624,6 +664,9 @@ HTML_PAGE = """
                     <div class="label">Total Pixels Changed</div>
                 </div>
             </div>
+
+            <div class="section-title">Detected Bounding Boxes</div>
+            <div class="bbox-grid" id="bbox-grid"></div>
 
             <div id="region-table-wrap"></div>
 
@@ -748,6 +791,26 @@ HTML_PAGE = """
             document.getElementById('stat-regions').textContent = stats.region_count;
             document.getElementById('stat-percent').textContent = stats.percent_changed + '%';
             document.getElementById('stat-pixels').textContent = stats.total_area_changed.toLocaleString();
+
+            // Bounding boxes
+            const bboxGrid = document.getElementById('bbox-grid');
+            if (stats.regions.length > 0) {
+                let html = '';
+                stats.regions.forEach((r, i) => {
+                    const [x, y, w, h] = r.bbox;
+                    html += '<div class="bbox-card">' +
+                        '<div class="bbox-title">Bounding Box ' + (i + 1) + '</div>' +
+                        '<div class="bbox-coords">x: ' + x + ', y: ' + y + ', w: ' + w + ', h: ' + h + '</div>' +
+                        '<div class="bbox-meta">' +
+                        '<span class="location-badge">' + r.location + '</span>' +
+                        '<span>Area: ' + r.area.toLocaleString() + ' px</span>' +
+                        '</div>' +
+                        '</div>';
+                });
+                bboxGrid.innerHTML = html;
+            } else {
+                bboxGrid.innerHTML = '';
+            }
 
             // Region table
             const tableWrap = document.getElementById('region-table-wrap');
