@@ -16,7 +16,11 @@ from typing import List, Dict, Tuple
 
 
 def compute_statistics(
-    regions: List[Dict], image_shape: Tuple[int, int]
+    regions: List[Dict],
+    image_shape: Tuple[int, int],
+    text_changes: List[Dict] | None = None,
+    has_ssim_signal: bool = False,
+    has_absdiff_signal: bool = False,
 ) -> Dict:
     """
     Compute aggregate and per-region statistics from detected change regions.
@@ -66,18 +70,55 @@ def compute_statistics(
         percent_changed = 0.0
 
     # Build per-region detail list (strip internal fields like 'centroid')
-    region_details = [
-        {
-            "bbox": r["bbox"],
-            "area": r["area"],
-            "location": r["location"],
-        }
-        for r in regions
-    ]
+    region_details = []
+    for r in regions:
+        region_area_pct = (r["area"] / total_image_area * 100) if total_image_area else 0.0
+        if region_area_pct > 5:
+            severity = "critical"
+        elif region_area_pct >= 1:
+            severity = "moderate"
+        else:
+            severity = "minor"
+
+        region_details.append(
+            {
+                "bbox": r["bbox"],
+                "area": r["area"],
+                "location": r["location"],
+                "severity": severity,
+            }
+        )
+
+    has_text_change = bool(text_changes)
+    if percent_changed > 10 or has_text_change:
+        change_severity = "major_revision"
+    elif percent_changed >= 2:
+        change_severity = "moderate_revision"
+    else:
+        change_severity = "minor_revision"
+
+    signal_count = 0
+    if has_ssim_signal:
+        signal_count += 1
+    if has_absdiff_signal:
+        signal_count += 1
+    if has_text_change:
+        signal_count += 1
+
+    if signal_count >= 3:
+        confidence_score = 95.0
+    elif signal_count == 2:
+        confidence_score = 80.0
+    elif signal_count == 1:
+        confidence_score = 60.0
+    else:
+        confidence_score = 45.0
 
     return {
         "region_count": len(regions),
         "percent_changed": percent_changed,
         "total_area_changed": total_area_changed,
         "regions": region_details,
+        "change_severity": change_severity,
+        "confidence_score": round(confidence_score, 1),
     }

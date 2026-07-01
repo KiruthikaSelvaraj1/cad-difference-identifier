@@ -118,6 +118,41 @@ def generate_summary(statistics: Dict) -> str:
     return " ".join(sentences)
 
 
+def generate_difference_explanation(statistics: Dict) -> str:
+    """
+    Create a concise, user-friendly explanation of how the images differ.
+
+    The output highlights the number of detected regions, the main locations
+    of the changes, and the overall severity in a readable format.
+    """
+    region_count = statistics.get("region_count", 0)
+    regions = statistics.get("regions", [])
+    percent_changed = statistics.get("percent_changed", 0.0)
+
+    if region_count == 0:
+        return (
+            "No visible differences were detected between the two files. "
+            "The drawings appear to be identical at the current analysis threshold."
+        )
+
+    top_regions = regions[:3]
+    location_names = [region["location"] for region in top_regions]
+
+    if len(location_names) == 1:
+        location_text = location_names[0]
+    elif len(location_names) == 2:
+        location_text = f"{location_names[0]} and {location_names[1]}"
+    else:
+        location_text = f"{location_names[0]}, {location_names[1]}, and {location_names[2]}"
+
+    primary_bbox = _bbox_text(top_regions[0]["bbox"]) if top_regions else "(x=0, y=0, w=0, h=0)"
+    return (
+        f"Detected {region_count} distinct change area(s). "
+        f"The main differences are concentrated around {location_text}. "
+        f"The largest region is outlined at {primary_bbox}, and the overall change level is about {percent_changed:.1f}% of the drawing area."
+    )
+
+
 def _readable_location(location: str) -> str:
     """
     Convert location keys like "center-right" into a more natural phrase.

@@ -1,6 +1,6 @@
-# AI-Based Image Difference Detection, Visualization & Automated Change Summarization
+# CAD Review Studio — AI-Based CAD Revision Review
 
-A complete Python system that compares two CAD drawing images, detects differences, generates rich visualizations, computes statistics, and produces a natural language summary — all running fully offline with zero external API dependencies.
+A complete Python system that compares two CAD drawing versions, detects differences, generates rich visualizations, computes statistics, and produces a natural language summary — all running fully offline with zero external API dependencies.
 
 ## Problem Statement
 
@@ -40,7 +40,7 @@ flowchart TD
 ## Project Structure
 
 ```
-image-diff-ai/
+cad-review-studio/
 ├── backend/
 │   ├── main.py              # FastAPI app, POST /compare endpoint
 │   ├── preprocessing.py     # Resize, align (ORB), binarize (Otsu)
@@ -69,7 +69,7 @@ image-diff-ai/
 ### 1. Clone and Navigate
 
 ```bash
-cd image-diff-ai
+cd cad-review-studio
 ```
 
 ### 2. Create Virtual Environment
@@ -112,10 +112,10 @@ The web UI will open at `http://localhost:8501`.
 
 ```bash
 # Build the image
-docker build -t image-diff-ai .
+docker build -t cad-review-studio .
 
 # Run the container
-docker run -p 8000:8000 image-diff-ai
+docker run -p 8000:8000 cad-review-studio
 ```
 
 ## API Usage
@@ -154,6 +154,16 @@ curl -X POST http://localhost:8000/compare \
   "summary": "The comparison identified four changed regions between the two drawings. The most significant modification is a component modification in the bottom-right area. This is followed by the removal or addition of a line segment in the top-left area. Minor annotation adjustments were also detected near the center. Overall, approximately 8.7% of the drawing area was affected by these changes."
 }
 ```
+
+## Advanced Features
+
+Beyond the base requirements, the upgraded project now includes:
+
+- OCR-based text and dimension detection using pytesseract, with graceful fallback when OCR is unavailable.
+- Severity scoring per region and overall change severity for faster review triage.
+- Confidence scoring that combines SSIM, absolute-difference, and OCR evidence.
+- Downloadable PDF comparison reports containing images, statistics, text changes, and the generated summary.
+- Improved visual annotations with colored arrows, severity-based labels, and a legend.
 
 ## Design Decisions
 

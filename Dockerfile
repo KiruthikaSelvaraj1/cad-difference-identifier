@@ -1,5 +1,5 @@
 # ============================================================
-# Dockerfile for Image Diff AI Backend
+# Dockerfile for CAD Review Studio Backend
 # ============================================================
 # Uses python:3.11-slim for a small footprint (~150MB base).
 # Installs system-level dependencies required by OpenCV
@@ -14,6 +14,7 @@ FROM python:3.11-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgl1-mesa-glx \
     libglib2.0-0 \
+    tesseract-ocr \
     && rm -rf /var/lib/apt/lists/*
 
 # Set working directory

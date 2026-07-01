@@ -20,7 +20,7 @@ env/
 Thumbs.db
 
 # Outputs (generated at runtime)
-outputs/*.png
+outputs/
 
 # Environment
 .env

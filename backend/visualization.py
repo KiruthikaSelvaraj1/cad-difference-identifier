@@ -28,6 +28,17 @@ import os
 from typing import List, Dict
 
 
+def _severity_for_region(image_shape: tuple[int, int], region: Dict) -> str:
+    h, w = image_shape
+    total_area = max(h * w, 1)
+    area_pct = (region["area"] / total_area) * 100
+    if area_pct > 5:
+        return "critical"
+    if area_pct >= 1:
+        return "moderate"
+    return "minor"
+
+
 def draw_bounding_boxes(
     image: np.ndarray, regions: List[Dict], output_path: str
 ) -> str:
@@ -48,23 +59,30 @@ def draw_bounding_boxes(
     """
     # Work on a copy to avoid mutating the original
     result = image.copy()
+    height, width = result.shape[:2]
+
+    severity_colors = {
+        "critical": (0, 0, 255),
+        "moderate": (0, 165, 255),
+        "minor": (0, 255, 255),
+    }
 
     for idx, region in enumerate(regions, start=1):
         x, y, w, h = region["bbox"]
+        severity = region.get("severity") or _severity_for_region((height, width), region)
+        color = severity_colors.get(severity, (0, 255, 255))
 
-        # Green bounding box with 2px line weight
-        cv2.rectangle(result, (x, y), (x + w, y + h), (0, 255, 0), 2)
+        cv2.rectangle(result, (x, y), (x + w, y + h), color, 2)
 
-        # Label background and arrow for clearer region marking
         label = f"#{idx}"
-        label_x = x
-        label_y = max(y - 18, 20)
+        label_x = max(min(x + 8, width - 40), 8)
+        label_y = max(y - 10, 25)
         text_size, _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
         cv2.rectangle(
             result,
             (label_x - 4, label_y - text_size[1] - 8),
             (label_x + text_size[0] + 8, label_y + 4),
-            (0, 0, 0),
+            (255, 255, 255),
             cv2.FILLED,
         )
         cv2.putText(
@@ -73,21 +91,17 @@ def draw_bounding_boxes(
             (label_x, label_y),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.6,
-            (0, 255, 0),
+            color,
             2,
         )
 
-        # Draw an arrow from the label down to the top-left corner of the box
-        arrow_tip = (x + 10, y + 10)
-        arrow_start = (label_x + text_size[0] // 2, label_y - 4)
-        cv2.arrowedLine(
-            result,
-            arrow_start,
-            arrow_tip,
-            (0, 255, 0),
-            2,
-            tipLength=0.2,
-        )
+        arrow_tip = (x + max(w // 4, 12), y + max(h // 4, 12))
+        arrow_start = (label_x + text_size[0] // 2, label_y - 2)
+        cv2.arrowedLine(result, arrow_start, arrow_tip, color, 2, tipLength=0.2)
+
+    cv2.putText(result, "Legend: red=critical orange=moderate yellow=minor", (12, height - 12), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
+    cv2.rectangle(result, (8, height - 26), (220, height - 6), (255, 255, 255), cv2.FILLED)
+    cv2.putText(result, "Legend: red=critical orange=moderate yellow=minor", (12, height - 12), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
 
     cv2.imwrite(output_path, result)
     return output_path

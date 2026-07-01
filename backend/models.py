@@ -1,5 +1,5 @@
 """
-Pydantic schemas for the Image Diff AI application.
+Pydantic schemas for the CAD Review Studio application.
 
 This module defines all data transfer objects (DTOs) used in the API response.
 Pydantic models enforce strict type validation at serialization boundaries,
@@ -8,6 +8,13 @@ ensuring the frontend always receives well-structured, predictable JSON.
 
 from pydantic import BaseModel, Field
 from typing import List
+
+
+class TextChange(BaseModel):
+    old_text: str = Field(..., description="Text present in the first image")
+    new_text: str = Field(..., description="Text present in the second image")
+    change_type: str = Field(..., description="One of modified, added, or removed")
+    location: List[int] = Field(..., description="OCR bounding box [x, y, w, h]")
 
 
 class RegionDetail(BaseModel):
@@ -32,6 +39,10 @@ class RegionDetail(BaseModel):
     location: str = Field(
         ...,
         description="Spatial location classification (e.g., 'top-left', 'center')",
+    )
+    severity: str = Field(
+        default="minor",
+        description="Severity of the region: critical, moderate, or minor",
     )
 
 
@@ -63,6 +74,14 @@ class Statistics(BaseModel):
     regions: List[RegionDetail] = Field(
         default_factory=list,
         description="List of individual change regions",
+    )
+    change_severity: str = Field(
+        default="minor_revision",
+        description="Overall severity classification",
+    )
+    confidence_score: float = Field(
+        default=0.0,
+        description="Confidence score between 0 and 100",
     )
 
 
@@ -97,3 +116,10 @@ class CompareResponse(BaseModel):
     )
     statistics: Statistics = Field(..., description="Change statistics")
     summary: str = Field(..., description="Natural language change summary")
+    difference_explanation: str = Field(
+        ..., description="Plain-English explanation of how the images differ"
+    )
+    text_changes: List[TextChange] = Field(
+        default_factory=list,
+        description="OCR-based text and dimension changes",
+    )

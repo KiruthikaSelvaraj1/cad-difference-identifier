@@ -1,5 +1,5 @@
 """
-FastAPI application for AI-Based Image Difference Detection.
+FastAPI application for CAD Review Studio.
 
 This is the main entry point for the backend server. It exposes a single
 POST /compare endpoint that accepts two CAD drawing files (images or PDFs),
@@ -26,23 +26,25 @@ import fitz  # PyMuPDF — for converting PDF pages to images
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, FileResponse
 
 from backend.models import CompareResponse, Statistics, RegionDetail
 from backend.preprocessing import preprocess_pair
 from backend.diff_engine import detect_differences
 from backend.visualization import generate_all_visualizations
 from backend.stats import compute_statistics
-from backend.summarizer import generate_summary
+from backend.summarizer import generate_summary, generate_difference_explanation
+from backend.text_diff import detect_text_changes
+from backend.report_generator import ReportGenerator
 
 
 # === Application Setup ===
 
 app = FastAPI(
-    title="Image Diff AI",
+    title="CAD Review Studio",
     description=(
-        "AI-Based Image Difference Detection, Visualization, and "
-        "Automated Change Summarization for CAD drawings. "
+        "Professional CAD revision review for detecting visual, textual, "
+        "and dimensional changes across drawing versions. "
         "Accepts JPG, PNG, and PDF inputs."
     ),
     version="1.0.0",
@@ -60,6 +62,9 @@ app.add_middleware(
 # Directory where generated visualizations are saved and served
 OUTPUT_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "outputs")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
+REPORT_DIR = os.path.join(OUTPUT_DIR, "reports")
+os.makedirs(REPORT_DIR, exist_ok=True)
+REPORT_GENERATOR = ReportGenerator(REPORT_DIR)
 
 # Mount the outputs directory as a static file server
 # This allows the frontend to fetch visualization images via URL
@@ -319,6 +324,7 @@ async def compare_images(
     ssim_score, diff_map, mask, regions = detect_differences(
         gray_a, gray_b, bin_a, bin_b
     )
+    text_changes = detect_text_changes(img_a, img_b)
 
     # === Step 5: Generate visualizations ===
     viz_paths = generate_all_visualizations(
@@ -326,10 +332,17 @@ async def compare_images(
     )
 
     # === Step 6: Compute statistics ===
-    stats = compute_statistics(regions, gray_a.shape[:2])
+    stats = compute_statistics(
+        regions,
+        gray_a.shape[:2],
+        text_changes=text_changes,
+        has_ssim_signal=bool(np.count_nonzero(mask)),
+        has_absdiff_signal=bool(np.count_nonzero(mask)),
+    )
 
     # === Step 7: Generate summary ===
     summary = generate_summary(stats)
+    difference_explanation = generate_difference_explanation(stats)
 
     # === Step 8: Build and return response ===
     base_url = "/outputs"
@@ -350,14 +363,78 @@ async def compare_images(
                     bbox=r["bbox"],
                     area=r["area"],
                     location=r["location"],
+                    severity=r.get("severity", "minor"),
                 )
                 for r in stats["regions"]
             ],
+            change_severity=stats["change_severity"],
+            confidence_score=stats["confidence_score"],
         ),
         summary=summary,
+        difference_explanation=difference_explanation,
+        text_changes=text_changes,
     )
 
     return response
+
+
+@app.post(
+    "/compare/report",
+    summary="Generate a downloadable PDF report",
+    description="Runs the full comparison and returns a PDF report for download.",
+)
+async def compare_and_download_report(
+    image_a: UploadFile = File(..., description="Reference CAD drawing (JPG/PNG/PDF)"),
+    image_b: UploadFile = File(..., description="Comparison CAD drawing (JPG/PNG/PDF)"),
+) -> FileResponse:
+    _validate_upload(image_a, "Image A")
+    _validate_upload(image_b, "Image B")
+
+    bytes_a = await image_a.read()
+    bytes_b = await image_b.read()
+
+    img_a = _load_file(bytes_a, image_a.filename, "Image A")
+    img_b = _load_file(bytes_b, image_b.filename, "Image B")
+
+    session_id = str(uuid.uuid4())[:8]
+    orig_a_path = os.path.join(OUTPUT_DIR, f"{session_id}_original_a.png")
+    orig_b_path = os.path.join(OUTPUT_DIR, f"{session_id}_original_b.png")
+    cv2.imwrite(orig_a_path, img_a)
+    cv2.imwrite(orig_b_path, img_b)
+
+    color_a, color_b, gray_a, gray_b, bin_a, bin_b = preprocess_pair(img_a, img_b)
+    _, diff_map, mask, regions = detect_differences(gray_a, gray_b, bin_a, bin_b)
+    text_changes = detect_text_changes(img_a, img_b)
+    viz_paths = generate_all_visualizations(color_a, color_b, diff_map, mask, regions, OUTPUT_DIR, session_id)
+    stats = compute_statistics(
+        regions,
+        gray_a.shape[:2],
+        text_changes=text_changes,
+        has_ssim_signal=bool(np.count_nonzero(mask)),
+        has_absdiff_signal=bool(np.count_nonzero(mask)),
+    )
+    summary = generate_summary(stats)
+
+    with open(viz_paths["highlighted"], "rb") as fh:
+        highlighted_bytes = fh.read()
+    with open(viz_paths["heatmap"], "rb") as fh:
+        heatmap_bytes = fh.read()
+    with open(orig_a_path, "rb") as fh:
+        image_a_bytes = fh.read()
+    with open(orig_b_path, "rb") as fh:
+        image_b_bytes = fh.read()
+
+    report_path = REPORT_GENERATOR.generate_report(
+        summary=summary,
+        statistics=stats,
+        text_changes=text_changes,
+        image_a=image_a_bytes,
+        image_b=image_b_bytes,
+        highlighted_image=highlighted_bytes,
+        heatmap_image=heatmap_bytes,
+    )
+
+    return FileResponse(report_path, filename=os.path.basename(report_path), media_type="application/pdf")
 
 
 # === HTML Frontend ===
@@ -370,8 +447,8 @@ HTML_PAGE = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Image Diff AI — CAD Drawing Comparison</title>
-    <meta name="description" content="AI-Based Image Difference Detection, Visualization, and Automated Change Summarization for CAD Drawings">
+    <title>CAD Review Studio — CAD Drawing Comparison</title>
+    <meta name="description" content="Professional CAD revision review for visual, textual, and dimensional change detection across drawing versions">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -614,8 +691,8 @@ HTML_PAGE = """
 <body>
     <div class="container">
         <header>
-            <h1>Image Diff AI</h1>
-            <p>AI-Based Image Difference Detection, Visualization &amp; Automated Change Summarization</p>
+            <h1>CAD Review Studio</h1>
+            <p>Professional CAD revision review with clear change highlights and report-ready insights</p>
         </header>
 
         <!-- Upload Section -->
@@ -696,7 +773,7 @@ HTML_PAGE = """
         </div>
 
         <footer>
-            Image Diff AI &mdash; AI-Based Image Difference Detection, Visualization &amp; Automated Change Summarization &mdash; Runs fully offline, zero API cost
+            CAD Review Studio &mdash; Professional CAD revision review with clear change highlights and report-ready insights &mdash; Runs fully offline, zero API cost
         </footer>
     </div>
 
@@ -844,6 +921,12 @@ HTML_PAGE = """
 </body>
 </html>
 """
+
+
+@app.get("/health", summary="Service health check")
+async def health() -> dict:
+    """Return a simple status payload for health checks."""
+    return {"status": "ok", "service": "cad-review-studio"}
 
 
 @app.get("/", response_class=HTMLResponse, summary="Web UI")

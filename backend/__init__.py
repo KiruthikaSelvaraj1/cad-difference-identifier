@@ -1,1 +1,1 @@
-# Backend package for Image Diff AI
+# Backend package for CAD Review Studio
