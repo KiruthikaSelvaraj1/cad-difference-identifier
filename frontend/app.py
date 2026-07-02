@@ -3,6 +3,8 @@
 
 import io
 
+import cv2
+import numpy as np
 import pandas as pd
 import requests
 import streamlit as st
@@ -237,6 +239,52 @@ st.markdown(
             background: rgba(255,255,255,0.82);
             margin-bottom: 1rem;
         }
+        .impact-card {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            padding: 1rem 1.1rem;
+            border-radius: 16px;
+            background: linear-gradient(135deg, #ffffff 0%, #f8fbff 100%);
+            border: 1px solid #e3ebf7;
+            box-shadow: 0 8px 20px rgba(15,23,42,0.04);
+            margin-bottom: 1rem;
+        }
+        .impact-score-circle {
+            width: 96px;
+            height: 96px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            font-weight: 800;
+            background: conic-gradient(#10B981 0% 100%, #e5e7eb 100% 100%);
+            color: #0f172a;
+            box-shadow: inset 0 0 0 8px white;
+        }
+        .impact-score-circle > span { background: white; border-radius: 50%; width: 72px; height: 72px; display: flex; align-items: center; justify-content: center; }
+        .impact-copy .impact-label { font-size: 0.84rem; text-transform: uppercase; letter-spacing: 0.08em; color: #5b6b80; }
+        .impact-copy .impact-value { font-size: 1.15rem; font-weight: 700; color: #0f172a; }
+        .breakdown-card {
+            border-radius: 12px;
+            padding: 0.8rem 0.9rem;
+            background: #ffffff;
+            border: 1px solid #e8eef8;
+            box-shadow: 0 6px 16px rgba(15,23,42,0.04);
+            min-height: 96px;
+        }
+        .breakdown-card .metric-name { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.06em; color: #5b6b80; }
+        .breakdown-card .metric-value { font-size: 1.2rem; font-weight: 800; color: #0f172a; margin-top: 0.25rem; }
+        .analytics-card {
+            border-radius: 16px;
+            padding: 1rem;
+            background: #ffffff;
+            border: 1px solid #e8eef8;
+            box-shadow: 0 10px 24px rgba(15,23,42,0.04);
+        }
+        .analytics-card .section-title { margin-bottom: 0.7rem; }
+        .comparison-table .stDataFrame { border-radius: 12px; overflow: hidden; }
     </style>
     """,
     unsafe_allow_html=True,
@@ -399,6 +447,45 @@ def main():
 
         with tabs[1]:
             stats = result["statistics"]
+            impact_score = float(stats.get("impact_score", 0.0))
+            impact_label = stats.get("impact_label", "Low Impact")
+            impact_color = "#10B981" if impact_label == "Low Impact" else "#F59E0B" if impact_label == "Moderate Impact" else "#EF4444"
+            st.markdown(
+                f"""
+                <div class="impact-card">
+                    <div class="impact-score-circle" style="background: conic-gradient({impact_color} 0% {impact_score:.0f}%, #e5e7eb {impact_score:.0f}% 100%);">
+                        <span>{impact_score:.0f}</span>
+                    </div>
+                    <div class="impact-copy">
+                        <div class="impact-label">Overall Impact</div>
+                        <div class="impact-value">{impact_label}</div>
+                        <div style="color:#5b6b80; margin-top:0.2rem;">Weighted from change extent, region count, OCR evidence, and severity.</div>
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+            breakdown = stats.get("change_breakdown", {})
+            breakdown_items = [
+                ("Additions", breakdown.get("additions", 0), "#10B981"),
+                ("Removals", breakdown.get("removals", 0), "#EF4444"),
+                ("Modifications", breakdown.get("modifications", 0), "#F59E0B"),
+                ("Positional Shifts", breakdown.get("positional_shifts", 0), "#6366F1"),
+            ]
+            cols = st.columns(4)
+            for col, (name, value, color) in zip(cols, breakdown_items):
+                with col:
+                    st.markdown(
+                        f"""
+                        <div class="breakdown-card" style="border-top: 4px solid {color};">
+                            <div class="metric-name">{name}</div>
+                            <div class="metric-value">{value}</div>
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
+                    )
+
             metric_cols = st.columns(3)
             with metric_cols[0]:
                 st.metric("Changed Regions", stats["region_count"])
@@ -406,12 +493,59 @@ def main():
                 st.metric("Area Changed", f"{stats['percent_changed']}%")
             with metric_cols[2]:
                 st.metric("Total Pixels", f"{stats['total_area_changed']:,}")
+
+            st.markdown("### Image A vs Image B Properties")
+            try:
+                image_a_bytes = file_a.getvalue() if file_a is not None else b""
+                image_b_bytes = file_b.getvalue() if file_b is not None else b""
+                def _image_stats(payload: bytes) -> dict:
+                    if not payload:
+                        return {"resolution": "n/a", "file_size_kb": 0.0, "line_density": 0.0}
+                    arr = np.frombuffer(payload, np.uint8)
+                    img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+                    if img is None:
+                        return {"resolution": "n/a", "file_size_kb": round(len(payload) / 1024, 1), "line_density": 0.0}
+                    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+                    _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+                    line_density = round((np.count_nonzero(binary > 0) / binary.size) * 100, 2)
+                    return {
+                        "resolution": f"{img.shape[1]} × {img.shape[0]}",
+                        "file_size_kb": round(len(payload) / 1024, 1),
+                        "line_density": line_density,
+                    }
+
+                a_stats = _image_stats(image_a_bytes)
+                b_stats = _image_stats(image_b_bytes)
+                comparison_df = pd.DataFrame(
+                    [
+                        {"Property": "Resolution", "Image A": a_stats["resolution"], "Image B": b_stats["resolution"]},
+                        {"Property": "File Size (KB)", "Image A": a_stats["file_size_kb"], "Image B": b_stats["file_size_kb"]},
+                        {"Property": "Line Density (%)", "Image A": a_stats["line_density"], "Image B": b_stats["line_density"]},
+                    ]
+                )
+                st.markdown('<div class="comparison-table">', unsafe_allow_html=True)
+                styled_df = comparison_df.style.apply(
+                    lambda row: ["font-weight: 700" if row.name == 0 else "" for _ in row],
+                    axis=1,
+                ).set_properties(**{"background-color": "#ffffff"})
+                st.dataframe(styled_df, use_container_width=True, hide_index=True)
+                st.markdown('</div>', unsafe_allow_html=True)
+            except Exception as exc:
+                st.warning(f"Unable to compute structural comparison metrics: {exc}")
+
+            if result.get("analytics_chart_url"):
+                st.markdown("### Change Distribution by Region")
+                st.markdown('<div class="analytics-card">', unsafe_allow_html=True)
+                _display_backend_image(result["analytics_chart_url"], caption="Region area distribution")
+                st.markdown('</div>', unsafe_allow_html=True)
+
             if stats["regions"]:
                 region_rows = []
                 for region in stats["regions"]:
                     region_rows.append({
                         "Location": region["location"],
                         "Severity": region.get("severity", "minor"),
+                        "Change Type": region.get("change_type", "modification"),
                         "Area": region["area"],
                         "BBox": tuple(region["bbox"]),
                     })

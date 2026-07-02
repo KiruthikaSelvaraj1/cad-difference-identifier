@@ -28,6 +28,7 @@ class RegionDetail(BaseModel):
         location: Human-readable spatial classification of the region's centroid
                   (e.g., "top-left", "center", "bottom-right"). Determined by
                   dividing the image into a 3x3 grid.
+        change_type: High-level classification of the change region.
     """
     bbox: List[int] = Field(
         ...,
@@ -43,6 +44,10 @@ class RegionDetail(BaseModel):
     severity: str = Field(
         default="minor",
         description="Severity of the region: critical, moderate, or minor",
+    )
+    change_type: str = Field(
+        default="modification",
+        description="Categorization of the region: addition, removal, modification, or positional_shift",
     )
 
 
@@ -83,6 +88,18 @@ class Statistics(BaseModel):
         default=0.0,
         description="Confidence score between 0 and 100",
     )
+    change_breakdown: dict = Field(
+        default_factory=dict,
+        description="Breakdown of detected change types",
+    )
+    impact_score: float = Field(
+        default=0.0,
+        description="Weighted overall impact score between 0 and 100",
+    )
+    impact_label: str = Field(
+        default="Low Impact",
+        description="Human-readable impact label",
+    )
 
 
 class CompareResponse(BaseModel):
@@ -122,4 +139,8 @@ class CompareResponse(BaseModel):
     text_changes: List[TextChange] = Field(
         default_factory=list,
         description="OCR-based text and dimension changes",
+    )
+    analytics_chart_url: str = Field(
+        default="",
+        description="URL for the analytics chart image",
     )

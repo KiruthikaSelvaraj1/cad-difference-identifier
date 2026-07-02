@@ -78,27 +78,30 @@ def generate_summary(statistics: Dict) -> str:
     primary_area = primary_change["area"]
 
     primary_bbox = _bbox_text(primary_change["bbox"])
+    primary_change_type = (primary_change.get("change_type") or "modification").replace("_", " ")
     sentences.append(
         f"The largest difference is located in the {primary_location}, bounded by {primary_bbox}, "
-        f"and covers about {primary_area:,} pixels."
+        f"and appears to be a {primary_change_type} covering about {primary_area:,} pixels."
     )
 
     if len(top_regions) > 1:
         secondary_change = top_regions[1]
         secondary_location = _readable_location(secondary_change["location"])
         secondary_bbox = _bbox_text(secondary_change["bbox"])
+        secondary_change_type = (secondary_change.get("change_type") or "modification").replace("_", " ")
         sentences.append(
             f"A second significant change appears in the {secondary_location}, bounded by {secondary_bbox}, "
-            f"indicating another clearly localized modification."
+            f"indicating another clearly localized {secondary_change_type}."
         )
 
     if len(top_regions) > 2:
         third_change = top_regions[2]
         third_location = _readable_location(third_change["location"])
         third_bbox = _bbox_text(third_change["bbox"])
+        third_change_type = (third_change.get("change_type") or "modification").replace("_", " ")
         sentences.append(
             f"A further smaller change was detected in the {third_location}, bounded by {third_bbox}, "
-            f"showing that the difference detection is correctly marking multiple areas."
+            f"showing another {third_change_type} region within the comparison."
         )
 
     # === Mention the overall distribution of changes ===

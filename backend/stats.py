@@ -15,6 +15,17 @@ The output is designed to feed directly into:
 from typing import List, Dict, Tuple
 
 
+def _label_for_change_type(change_type: str | None) -> str:
+    normalized = (change_type or "modification").lower().replace(" ", "_")
+    mapping = {
+        "addition": "additions",
+        "removal": "removals",
+        "modification": "modifications",
+        "positional_shift": "positional_shifts",
+    }
+    return mapping.get(normalized, "modifications")
+
+
 def compute_statistics(
     regions: List[Dict],
     image_shape: Tuple[int, int],
@@ -71,6 +82,13 @@ def compute_statistics(
 
     # Build per-region detail list (strip internal fields like 'centroid')
     region_details = []
+    change_breakdown = {
+        "additions": 0,
+        "removals": 0,
+        "modifications": 0,
+        "positional_shifts": 0,
+    }
+    max_region_severity = 0.0
     for r in regions:
         region_area_pct = (r["area"] / total_image_area * 100) if total_image_area else 0.0
         if region_area_pct > 5:
@@ -80,12 +98,23 @@ def compute_statistics(
         else:
             severity = "minor"
 
+        if severity == "critical":
+            max_region_severity = max(max_region_severity, 100.0)
+        elif severity == "moderate":
+            max_region_severity = max(max_region_severity, 50.0)
+        else:
+            max_region_severity = max(max_region_severity, 10.0)
+
+        change_type = r.get("change_type", "modification")
+        change_breakdown[_label_for_change_type(change_type)] += 1
+
         region_details.append(
             {
                 "bbox": r["bbox"],
                 "area": r["area"],
                 "location": r["location"],
                 "severity": severity,
+                "change_type": change_type,
             }
         )
 
@@ -114,6 +143,28 @@ def compute_statistics(
     else:
         confidence_score = 45.0
 
+    baseline_region_count = max(3, 10)
+    region_count_component = min(100.0, (len(regions) / baseline_region_count) * 100.0)
+    percent_component = min(100.0, percent_changed * 1.2)
+    text_component = 100.0 if has_text_change else 0.0
+    severity_component = max_region_severity
+
+    impact_score = round(
+        (percent_component * 0.4)
+        + (region_count_component * 0.2)
+        + (text_component * 0.25)
+        + (severity_component * 0.15),
+        1,
+    )
+    impact_score = min(100.0, max(0.0, impact_score))
+
+    if impact_score < 25.0:
+        impact_label = "Low Impact"
+    elif impact_score <= 60.0:
+        impact_label = "Moderate Impact"
+    else:
+        impact_label = "High Impact"
+
     return {
         "region_count": len(regions),
         "percent_changed": percent_changed,
@@ -121,4 +172,7 @@ def compute_statistics(
         "regions": region_details,
         "change_severity": change_severity,
         "confidence_score": round(confidence_score, 1),
+        "change_breakdown": change_breakdown,
+        "impact_score": impact_score,
+        "impact_label": impact_label,
     }

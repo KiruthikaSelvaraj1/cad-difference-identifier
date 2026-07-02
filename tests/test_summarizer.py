@@ -1,6 +1,6 @@
 import unittest
 
-from backend.summarizer import generate_difference_explanation
+from backend.summarizer import generate_difference_explanation, generate_summary
 
 
 class SummarizerTests(unittest.TestCase):
@@ -9,17 +9,20 @@ class SummarizerTests(unittest.TestCase):
             "region_count": 2,
             "percent_changed": 7.5,
             "regions": [
-                {"location": "top-left", "bbox": [10, 20, 30, 40], "area": 1200},
-                {"location": "bottom-right", "bbox": [100, 150, 50, 40], "area": 800},
+                {"location": "top-left", "bbox": [10, 20, 30, 40], "area": 1200, "change_type": "addition"},
+                {"location": "bottom-right", "bbox": [100, 150, 50, 40], "area": 800, "change_type": "removal"},
             ],
         }
 
         explanation = generate_difference_explanation(stats)
+        summary = generate_summary(stats)
 
         self.assertIn("2", explanation)
         self.assertIn("top-left", explanation)
         self.assertIn("bottom-right", explanation)
         self.assertIn("7.5%", explanation)
+        self.assertIn("addition", summary.lower())
+        self.assertIn("removal", summary.lower())
 
 
 if __name__ == "__main__":

@@ -36,6 +36,7 @@ from backend.stats import compute_statistics
 from backend.summarizer import generate_summary, generate_difference_explanation
 from backend.text_diff import detect_text_changes
 from backend.report_generator import ReportGenerator
+from backend.analytics_chart import generate_analytics_chart
 
 
 # === Application Setup ===
@@ -344,6 +345,18 @@ async def compare_images(
     summary = generate_summary(stats)
     difference_explanation = generate_difference_explanation(stats)
 
+    analytics_chart_path = os.path.join(OUTPUT_DIR, f"{session_id}_analytics.png")
+    generate_analytics_chart(
+        [
+            {
+                **region,
+                "change_type": region.get("change_type", "modification"),
+            }
+            for region in regions
+        ],
+        analytics_chart_path,
+    )
+
     # === Step 8: Build and return response ===
     base_url = "/outputs"
 
@@ -364,15 +377,20 @@ async def compare_images(
                     area=r["area"],
                     location=r["location"],
                     severity=r.get("severity", "minor"),
+                    change_type=r.get("change_type", "modification"),
                 )
                 for r in stats["regions"]
             ],
             change_severity=stats["change_severity"],
             confidence_score=stats["confidence_score"],
+            change_breakdown=stats.get("change_breakdown", {}),
+            impact_score=stats.get("impact_score", 0.0),
+            impact_label=stats.get("impact_label", "Low Impact"),
         ),
         summary=summary,
         difference_explanation=difference_explanation,
         text_changes=text_changes,
+        analytics_chart_url=f"{base_url}/{session_id}_analytics.png",
     )
 
     return response

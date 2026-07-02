@@ -150,8 +150,45 @@ def create_combined_mask(
     return dilated
 
 
+def classify_change_type(region: Dict, bin_a: np.ndarray, bin_b: np.ndarray) -> str:
+    """Classify the nature of a detected change region."""
+    x, y, w, h = region["bbox"]
+    crop_a = bin_a[y:y + h, x:x + w]
+    crop_b = bin_b[y:y + h, x:x + w]
+
+    if crop_a.size == 0 or crop_b.size == 0:
+        return "modification"
+
+    white_a = np.count_nonzero(crop_a == 0)
+    white_b = np.count_nonzero(crop_b == 0)
+    line_a = np.count_nonzero(crop_a == 255)
+    line_b = np.count_nonzero(crop_b == 255)
+
+    if line_a == 0 and line_b > 0:
+        return "addition"
+    if line_b == 0 and line_a > 0:
+        return "removal"
+
+    if crop_a.shape[0] > 0 and crop_a.shape[1] > 0:
+        search_h = max(2 * h, 1)
+        search_w = max(2 * w, 1)
+        search_y = max(0, y - h // 2)
+        search_x = max(0, x - w // 2)
+        search_y_end = min(bin_b.shape[0], search_y + search_h)
+        search_x_end = min(bin_b.shape[1], search_x + search_w)
+        search_window = bin_b[search_y:search_y_end, search_x:search_x_end]
+        if search_window.size > 0:
+            template = cv2.resize(crop_a, (max(1, search_window.shape[1]), max(1, search_window.shape[0])))
+            result = cv2.matchTemplate(search_window, template, cv2.TM_CCOEFF_NORMED)
+            _, max_val, _, _ = cv2.minMaxLoc(result)
+            if max_val > 0.75:
+                return "positional_shift"
+
+    return "modification"
+
+
 def extract_changed_regions(
-    mask: np.ndarray, image_shape: Tuple[int, int]
+    mask: np.ndarray, image_shape: Tuple[int, int], bin_a: np.ndarray | None = None, bin_b: np.ndarray | None = None
 ) -> List[Dict]:
     """
     Extract contours from the binary mask and return structured region data.
@@ -200,12 +237,16 @@ def extract_changed_regions(
         # Classify spatial location based on centroid position in a 3x3 grid
         location = _classify_location(cx, cy, img_w, img_h)
 
-        regions.append({
+        region = {
             "bbox": [x, y, w, h],
             "area": int(area),
             "centroid": (cx, cy),
             "location": location,
-        })
+            "change_type": "modification",
+        }
+        if bin_a is not None and bin_b is not None:
+            region["change_type"] = classify_change_type(region, bin_a, bin_b)
+        regions.append(region)
 
     # Sort by area descending — largest change first
     regions.sort(key=lambda r: r["area"], reverse=True)
@@ -288,6 +329,6 @@ def detect_differences(
     mask = create_combined_mask(ssim_diff, abs_diff)
 
     # Step 4: Extract and classify change regions
-    regions = extract_changed_regions(mask, gray_a.shape[:2])
+    regions = extract_changed_regions(mask, gray_a.shape[:2], bin_a, bin_b)
 
     return ssim_score, ssim_diff, mask, regions
